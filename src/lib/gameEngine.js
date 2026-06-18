@@ -93,7 +93,11 @@ export function createGameEngine(hostId, onBroadcast, onClearCanvas) {
 
       if (state.round > state.maxRounds) {
         state.status = 'finished';
-        addSystemMessage('게임 종료! 수고했어요 🎉');
+        const topScore = Math.max(...state.players.map((p) => p.score), 0);
+        const winnerNames = state.players
+          .filter((p) => p.score === topScore)
+          .map((p) => p.name);
+        addSystemMessage(`🎉 ${winnerNames.join(', ')}가 ${topScore}점으로 이겼습니다!`);
         broadcastState();
         return;
       }
@@ -116,12 +120,18 @@ export function createGameEngine(hostId, onBroadcast, onClearCanvas) {
     },
 
     startGame(maxRounds) {
+      clearInterval(state.timer);
       const rounds = Math.min(MAX_ROUNDS, Math.max(MIN_ROUNDS, parseInt(maxRounds, 10) || 6));
       state.maxRounds = rounds;
       state.round = 1;
       state.drawerIndex = 0;
       state.players.forEach((p) => (p.score = 0));
-      addSystemMessage(`게임 시작! (${state.players.length}명, ${state.maxRounds}라운드)`);
+      const isReplay = state.status === 'finished';
+      addSystemMessage(
+        isReplay
+          ? `다시 시작! (${state.players.length}명, ${state.maxRounds}라운드)`
+          : `게임 시작! (${state.players.length}명, ${state.maxRounds}라운드)`
+      );
       startRound();
     },
 

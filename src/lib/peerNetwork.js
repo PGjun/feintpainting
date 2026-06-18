@@ -101,6 +101,14 @@ export class HostPeerManager {
     }
   }
 
+  broadcastExcept(excludeSocketId, msg) {
+    for (const [id] of this.peers) {
+      if (id !== excludeSocketId) {
+        this.sendTo(id, msg);
+      }
+    }
+  }
+
   removePeer(guestSocketId) {
     const entry = this.peers.get(guestSocketId);
     if (!entry) return;

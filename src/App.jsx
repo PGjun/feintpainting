@@ -5,7 +5,15 @@ import { MAX_PLAYERS } from './lib/constants';
 import { createGameEngine } from './lib/gameEngine';
 import { HostPeerManager, GuestPeerManager } from './lib/peerNetwork';
 
-function CopyButton({ text, label = '복사' }) {
+function Logo({ size = 'lg' }) {
+  return (
+    <h1 className={`logo ${size}`}>
+      Feint<span className="logo-accent">Painting</span>
+    </h1>
+  );
+}
+
+function CopyIconButton({ text, title = '복사' }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -15,8 +23,23 @@ function CopyButton({ text, label = '복사' }) {
   };
 
   return (
-    <button className="btn-copy" onClick={handleCopy}>
-      {copied ? '복사됨!' : label}
+    <button
+      type="button"
+      className={`btn-copy-icon ${copied ? 'copied' : ''}`}
+      onClick={handleCopy}
+      title={copied ? '복사됨!' : title}
+      aria-label={title}
+    >
+      {copied ? (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <path d="M20 6L9 17l-5-5" />
+        </svg>
+      ) : (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect x="9" y="9" width="13" height="13" rx="2" />
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg>
+      )}
     </button>
   );
 }
@@ -31,8 +54,8 @@ function Lobby({ onCreate, onJoin, error, defaultRoomCode }) {
 
   return (
     <div className="lobby">
-      <h2>🎨 그림 맞추기</h2>
-      <p className="lobby-desc">방을 만들면 당신의 기기에서 게임이 실행됩니다</p>
+      <Logo />
+      <p className="lobby-desc">친구들과 함께 실시간으로 그림을 맞춰보세요!</p>
       {error && <div className="error-msg">{error}</div>}
 
       <input
@@ -136,12 +159,40 @@ function ChatPanel({ messages, onSend, disabled, placeholder }) {
   );
 }
 
+function isFreeDrawStatus(status) {
+  return status === 'waiting' || status === 'finished';
+}
+
+function getWinners(players) {
+  const sorted = [...players].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+  const topScore = sorted[0]?.score ?? 0;
+  return sorted.filter((p) => (p.score ?? 0) === topScore);
+}
+
+function formatWinnerMessage(winners) {
+  if (winners.length === 0) return '';
+  const score = winners[0].score ?? 0;
+  const names = winners.map((p) => p.name).join(', ');
+  return `${names}가 ${score}점으로 이겼습니다!`;
+}
+
+function getLobbyStatusBar(room, isHost, p2pStatus) {
+  if (p2pStatus && !p2pStatus.ok) {
+    return p2pStatus;
+  }
+
+  const count = `${room.players.length}/${MAX_PLAYERS}명`;
+  return {
+    ok: true,
+    text: isHost
+      ? `👑 방장 — 참가자를 기다리는 중... (${count})`
+      : `참가자를 기다리는 중... (${count})`,
+  };
+}
+
 function GameRoom({
   room,
-  roomCode,
   isHost,
-  myName,
-  myId,
   p2pStatus,
   onStartGame,
   onSendChat,
@@ -149,14 +200,31 @@ function GameRoom({
   onClear,
   canvasRef,
 }) {
-  const [roundCount, setRoundCount] = useState(6);
-  const chatDisabled = room.status === 'round-end' || room.status === 'finished';
+  const [roundInput, setRoundInput] = useState('6');
+  const parsedRounds = parseInt(roundInput, 10);
+  const isValidRounds =
+    roundInput.trim() !== '' &&
+    !isNaN(parsedRounds) &&
+    parsedRounds >= 1 &&
+    parsedRounds <= 50;
+  const chatDisabled = room.status === 'round-end';
   const chatPlaceholder =
     room.status === 'playing' && !room.isDrawer
       ? '정답을 입력하세요...'
       : '메시지 입력...';
 
   const inviteLink = `${window.location.origin.replace(/\/$/, '')}/?room=${room.code}`;
+  const winners = room.status === 'finished' ? getWinners(room.players) : [];
+  const canDrawFree =
+    isFreeDrawStatus(room.status) ||
+    (room.isDrawer && room.status === 'playing');
+
+  const statusBar =
+    room.status === 'waiting'
+      ? getLobbyStatusBar(room, isHost, p2pStatus)
+      : p2pStatus && !p2pStatus.ok
+        ? p2pStatus
+        : null;
 
   return (
     <div className="game">
@@ -193,77 +261,56 @@ function GameRoom({
           )}
         </div>
 
-        {p2pStatus && (
-          <div className={`p2p-status ${p2pStatus.ok ? 'ok' : 'warn'}`}>{p2pStatus.text}</div>
+        {statusBar && (
+          <div className={`p2p-status ${statusBar.ok ? 'ok' : 'warn'}`}>{statusBar.text}</div>
         )}
 
         <DrawingCanvas
           ref={canvasRef}
-          isDrawer={room.isDrawer && room.status === 'playing'}
+          isDrawer={canDrawFree}
           onDraw={onDraw}
           onClear={onClear}
         />
-
-        {room.status === 'waiting' && (
-          <p style={{ textAlign: 'center', color: 'var(--muted)' }}>
-            {room.players.length < 2
-              ? `참가자를 기다리는 중... (${room.players.length}/${MAX_PLAYERS}명)`
-              : isHost
-                ? `참가자 ${room.players.length}명 — P2P 연결 후 게임을 시작하세요`
-                : `참가자 ${room.players.length}명 — 방장이 게임을 시작할 때까지...`}
-          </p>
-        )}
       </div>
 
       <div className="sidebar">
-        <div className="room-info">
-          <div className="hint">방 코드</div>
-          <div className="code">{room.code}</div>
-          <div className="hint">
-            참가자 {room.players.length}/{MAX_PLAYERS}명
-          </div>
-          {isHost && (
-            <div className="hint subtle">🖥️ 이 기기에서 게임 실행 중</div>
-          )}
-        </div>
-
-        {isHost && room.status === 'waiting' && (
-          <div className="share-box compact">
-            <div className="hint">친구 초대 (코드 또는 링크)</div>
-            <div className="share-url small">{inviteLink}</div>
-            <CopyButton text={inviteLink} label="링크 복사" />
+        {room.status === 'waiting' && (
+          <div className="room-info">
+            <div className="invite-row">
+              <span className="invite-label">초대 코드 :</span>
+              <span className="invite-value code">{room.code}</span>
+              <CopyIconButton text={room.code} title="코드 복사" />
+            </div>
+            <div className="invite-row">
+              <span className="invite-label">초대 링크 :</span>
+              <span className="invite-value link">{inviteLink}</span>
+              <CopyIconButton text={inviteLink} title="링크 복사" />
+            </div>
           </div>
         )}
 
-        {room.status === 'waiting' && room.players.length >= 2 && isHost && (
+        {room.status === 'finished' && winners.length > 0 && (
+          <div className="finished-banner">
+            <p className="winner-text">🎉 {formatWinnerMessage(winners)}</p>
+          </div>
+        )}
+
+        {(room.status === 'waiting' || room.status === 'finished') && isHost && (
           <div className="start-panel">
             <label className="field-label">라운드 수 (1~50)</label>
             <input
-              type="number"
-              min={1}
-              max={50}
-              value={roundCount}
-              onChange={(e) => {
-                const val = parseInt(e.target.value, 10);
-                if (!isNaN(val)) setRoundCount(Math.min(50, Math.max(1, val)));
-              }}
+              type="text"
+              inputMode="numeric"
+              value={roundInput}
+              onChange={(e) => setRoundInput(e.target.value)}
             />
-            <button className="btn-start" onClick={() => onStartGame(roundCount)}>
-              게임 시작!
+            <button
+              className="btn-start"
+              onClick={() => onStartGame(parsedRounds)}
+              disabled={room.players.length < 2 || !isValidRounds}
+            >
+              {room.status === 'finished' ? '다시 시작' : '게임 시작!'}
             </button>
-          </div>
-        )}
-
-        {room.status === 'finished' && (
-          <div className="finished-banner">
-            <h3>🎉 게임 종료!</h3>
-            <div className="final-scores">
-              {room.players.map((p) => (
-                <div key={p.id}>
-                  {p.name}: <strong>{p.score}점</strong>
-                </div>
-              ))}
-            </div>
           </div>
         )}
 
@@ -289,7 +336,6 @@ export default function App() {
   const [myName, setMyName] = useState('');
   const [myId, setMyId] = useState(null);
   const [error, setError] = useState('');
-  const [connected, setConnected] = useState(false);
   const [p2pStatus, setP2pStatus] = useState(null);
 
   const socketRef = useRef(null);
@@ -302,6 +348,23 @@ export default function App() {
   const handleHostMessage = useCallback((guestSocketId, msg) => {
     const engine = gameEngineRef.current;
     if (!engine) return;
+
+    if (msg.type === 'lobby-draw') {
+      if (!isFreeDrawStatus(engine.getHostState().status)) return;
+      canvasRef.current?.drawStroke(msg.stroke);
+      hostPeersRef.current?.broadcastExcept(guestSocketId, {
+        type: 'draw',
+        stroke: msg.stroke,
+      });
+      return;
+    }
+
+    if (msg.type === 'lobby-clear') {
+      if (!isFreeDrawStatus(engine.getHostState().status)) return;
+      canvasRef.current?.clear();
+      hostPeersRef.current?.broadcast({ type: 'clear' });
+      return;
+    }
 
     if (msg.type === 'chat') {
       const player = lobbyPlayersRef.current.find((p) => p.id === guestSocketId);
@@ -329,13 +392,8 @@ export default function App() {
     socketRef.current = socket;
 
     socket.on('connect', () => {
-      setConnected(true);
       setMyId(socket.id);
       setError('');
-    });
-
-    socket.on('disconnect', () => {
-      setConnected(false);
     });
 
     socket.on('connect_error', () => {
@@ -377,26 +435,24 @@ export default function App() {
 
         peers.onMessage = handleHostMessage;
         peers.onPeerConnected = () => {
-          setP2pStatus({ ok: true, text: '✅ 참가자와 P2P 연결됨' });
+          setP2pStatus(null);
           engine.setPlayers(lobbyPlayersRef.current);
         };
         peers.onPeerDisconnected = (guestId) => {
           lobbyPlayersRef.current = lobbyPlayersRef.current.filter((p) => p.id !== guestId);
           engine.setPlayers(lobbyPlayersRef.current);
         };
-
-        setP2pStatus({ ok: true, text: '🖥️ 방장 모드 — 게임이 이 기기에서 실행됩니다' });
       } else {
         const guest = new GuestPeerManager(socket, data.hostId);
         guestPeerRef.current = guest;
         guest.onMessage = handleGuestMessage;
         guest.onConnected = () => {
-          setP2pStatus({ ok: true, text: '✅ 방장과 P2P 연결됨' });
+          setP2pStatus(null);
         };
         guest.onDisconnected = () => {
-          setP2pStatus({ ok: false, text: '⚠️ 방장과 연결이 끊어졌어요' });
+          setP2pStatus({ ok: false, text: '⚠️ 연결이 끊어졌어요' });
         };
-        setP2pStatus({ ok: false, text: '📡 방장과 연결 중...' });
+        setP2pStatus({ ok: false, text: '📡 연결 중...' });
       }
     });
 
@@ -439,6 +495,7 @@ export default function App() {
       setError(msg);
       setRoom(null);
       setRoomCode(null);
+      setP2pStatus(null);
     });
 
     socket.on('error', (msg) => {
@@ -470,6 +527,7 @@ export default function App() {
     engine?.startGame(roundCount);
     socketRef.current?.emit('game-started', { code: roomCode });
     setRoom(engine?.getHostState());
+    setP2pStatus(null);
   };
 
   const handleSendChat = (text) => {
@@ -482,13 +540,35 @@ export default function App() {
     }
   };
 
-  const handleDraw = (stroke) => {
-    gameEngineRef.current?.handleDraw(stroke);
-  };
+  const handleDraw = useCallback(
+    (stroke) => {
+      const status = gameEngineRef.current?.getHostState()?.status ?? room?.status;
+      if (isFreeDrawStatus(status)) {
+        if (isHost) {
+          hostPeersRef.current?.broadcast({ type: 'draw', stroke });
+        } else {
+          guestPeerRef.current?.send({ type: 'lobby-draw', stroke });
+        }
+        return;
+      }
+      gameEngineRef.current?.handleDraw(stroke);
+    },
+    [isHost, room?.status]
+  );
 
-  const handleClear = () => {
+  const handleClear = useCallback(() => {
+    const status = gameEngineRef.current?.getHostState()?.status ?? room?.status;
+    if (isFreeDrawStatus(status)) {
+      if (isHost) {
+        canvasRef.current?.clear();
+        hostPeersRef.current?.broadcast({ type: 'clear' });
+      } else {
+        guestPeerRef.current?.send({ type: 'lobby-clear' });
+      }
+      return;
+    }
     gameEngineRef.current?.handleClearCanvas();
-  };
+  }, [isHost, room?.status]);
 
   useEffect(() => {
     if (!isHost || !gameEngineRef.current) return;
@@ -499,11 +579,12 @@ export default function App() {
   }, [isHost, room?.status]);
 
   return (
-    <div className="app">
-      <header className="header">
-        <h1>Feint Painting</h1>
-        <p>{connected ? '🌐 접속됨 — 방 만들고 코드를 공유하세요' : '서버 연결 중...'}</p>
-      </header>
+    <div className={`app${!room ? ' lobby-page' : ''}`}>
+      {room && (
+        <header className="header">
+          <Logo size="sm" />
+        </header>
+      )}
 
       {!room ? (
         <Lobby
@@ -515,10 +596,7 @@ export default function App() {
       ) : (
         <GameRoom
           room={room}
-          roomCode={roomCode}
           isHost={isHost}
-          myName={myName}
-          myId={myId}
           p2pStatus={p2pStatus}
           onStartGame={handleStartGame}
           onSendChat={handleSendChat}
