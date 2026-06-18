@@ -1,16 +1,16 @@
-import { WORDS, ROUND_TIME, MIN_ROUNDS, MAX_ROUNDS } from './constants.js';
+import { WORDS, ROUND_TIME, MIN_ROUNDS, MAX_ROUNDS, DEFAULT_ROUNDS } from './constants.js';
 
 function pickWord() {
   return WORDS[Math.floor(Math.random() * WORDS.length)];
 }
 
-export function createGameEngine(hostId, onBroadcast, onClearCanvas) {
+export function createGameEngine(hostId, onBroadcast, onClearCanvas, onGameFinished) {
   const state = {
     code: '',
     players: [],
     drawerIndex: 0,
     round: 1,
-    maxRounds: 6,
+    maxRounds: DEFAULT_ROUNDS,
     status: 'waiting',
     currentWord: '',
     timeLeft: ROUND_TIME,
@@ -98,6 +98,7 @@ export function createGameEngine(hostId, onBroadcast, onClearCanvas) {
           .filter((p) => p.score === topScore)
           .map((p) => p.name);
         addSystemMessage(`🎉 ${winnerNames.join(', ')}가 ${topScore}점으로 이겼습니다!`);
+        onGameFinished?.();
         broadcastState();
         return;
       }
@@ -121,7 +122,7 @@ export function createGameEngine(hostId, onBroadcast, onClearCanvas) {
 
     startGame(maxRounds) {
       clearInterval(state.timer);
-      const rounds = Math.min(MAX_ROUNDS, Math.max(MIN_ROUNDS, parseInt(maxRounds, 10) || 6));
+      const rounds = Math.min(MAX_ROUNDS, Math.max(MIN_ROUNDS, parseInt(maxRounds, 10) || DEFAULT_ROUNDS));
       state.maxRounds = rounds;
       state.round = 1;
       state.drawerIndex = 0;

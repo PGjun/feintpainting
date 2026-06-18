@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import DrawingCanvas from './components/DrawingCanvas';
-import { MAX_PLAYERS } from './lib/constants';
+import { MAX_PLAYERS, getPlayerColor, DEFAULT_ROUNDS } from './lib/constants';
 import { createGameEngine } from './lib/gameEngine';
 import { HostPeerManager, GuestPeerManager } from './lib/peerNetwork';
 
@@ -99,9 +99,10 @@ function Lobby({ onCreate, onJoin, error, defaultRoomCode }) {
   );
 }
 
-function ChatPanel({ messages, onSend, disabled, placeholder }) {
+function ChatPanel({ messages, players, onSend, disabled, placeholder }) {
   const [text, setText] = useState('');
   const messagesRef = useRef(null);
+  const inputRef = useRef(null);
   const lastScrollKey = useRef('');
 
   const scrollKey =
@@ -120,6 +121,7 @@ function ChatPanel({ messages, onSend, disabled, placeholder }) {
     if (!text.trim() || disabled) return;
     onSend(text.trim());
     setText('');
+    requestAnimationFrame(() => inputRef.current?.focus());
   };
 
   return (
@@ -130,10 +132,18 @@ function ChatPanel({ messages, onSend, disabled, placeholder }) {
             {msg.type === 'system' ? (
               msg.text
             ) : msg.type === 'correct' ? (
-              <>🎉 {msg.name}: {msg.text} — 정답!</>
+              <>
+                🎉{' '}
+                <span className="name" style={{ color: getPlayerColor(players, msg.name) }}>
+                  {msg.name}
+                </span>
+                : {msg.text} — 정답!
+              </>
             ) : (
               <>
-                <span className="name">{msg.name}:</span>
+                <span className="name" style={{ color: getPlayerColor(players, msg.name) }}>
+                  {msg.name}:
+                </span>
                 {msg.text}
               </>
             )}
@@ -142,6 +152,7 @@ function ChatPanel({ messages, onSend, disabled, placeholder }) {
       </div>
       <div className="chat-input-row">
         <input
+          ref={inputRef}
           placeholder={placeholder}
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -151,7 +162,12 @@ function ChatPanel({ messages, onSend, disabled, placeholder }) {
           tabIndex={disabled ? -1 : 0}
           inputMode={disabled ? 'none' : 'text'}
         />
-        <button onClick={handleSend} disabled={disabled || !text.trim()}>
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={handleSend}
+          disabled={disabled || !text.trim()}
+        >
           전송
         </button>
       </div>
@@ -200,7 +216,7 @@ function GameRoom({
   onClear,
   canvasRef,
 }) {
-  const [roundInput, setRoundInput] = useState('6');
+  const [roundInput, setRoundInput] = useState(String(DEFAULT_ROUNDS));
   const parsedRounds = parseInt(roundInput, 10);
   const isValidRounds =
     roundInput.trim() !== '' &&
@@ -220,7 +236,7 @@ function GameRoom({
     (room.isDrawer && room.status === 'playing');
 
   const statusBar =
-    room.status === 'waiting'
+    room.status === 'waiting' || room.status === 'finished'
       ? getLobbyStatusBar(room, isHost, p2pStatus)
       : p2pStatus && !p2pStatus.ok
         ? p2pStatus
@@ -274,7 +290,7 @@ function GameRoom({
       </div>
 
       <div className="sidebar">
-        {room.status === 'waiting' && (
+        {(room.status === 'waiting' || room.status === 'finished') && (
           <div className="room-info">
             <div className="invite-row">
               <span className="invite-label">초대 코드 :</span>
@@ -316,6 +332,7 @@ function GameRoom({
 
         <ChatPanel
           messages={room.messages || []}
+          players={room.players}
           onSend={onSendChat}
           disabled={chatDisabled}
           placeholder={chatPlaceholder}
@@ -323,6 +340,10 @@ function GameRoom({
       </div>
     </div>
   );
+}
+
+function confirmLeaveRoom() {
+  return window.confirm('방에서 나가시겠습니까?');
 }
 
 function getInitialRoomCode() {
@@ -373,6 +394,7 @@ export default function App() {
   }, []);
 
   const handleGuestMessage = useCallback((msg) => {
+    setP2pStatus(null);
     if (msg.type === 'state') {
       setRoom(msg.state);
     }
@@ -427,6 +449,9 @@ export default function App() {
           () => {
             peers.broadcast({ type: 'clear' });
             canvasRef.current?.clear();
+          },
+          () => {
+            socket.emit('game-finished', { code: data.code });
           }
         );
         engine.setCode(data.code);
@@ -578,10 +603,73 @@ export default function App() {
     return () => clearInterval(interval);
   }, [isHost, room?.status]);
 
+  const leaveRoom = useCallback(() => {
+    gameEngineRef.current?.destroy();
+    gameEngineRef.current = null;
+    hostPeersRef.current?.destroy();
+    hostPeersRef.current = null;
+    guestPeerRef.current?.destroy();
+    guestPeerRef.current = null;
+    lobbyPlayersRef.current = [];
+    canvasRef.current?.clear();
+
+    const socket = socketRef.current;
+    if (socket) {
+      socket.disconnect();
+      socket.connect();
+    }
+
+    setRoom(null);
+    setRoomCode(null);
+    setIsHost(false);
+    setP2pStatus(null);
+    setError('');
+
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('room')) {
+      url.searchParams.delete('room');
+      window.history.replaceState({}, '', url.pathname + url.search);
+    }
+  }, []);
+
+  const handleLeaveRoom = useCallback(() => {
+    if (!confirmLeaveRoom()) return;
+    leaveRoom();
+  }, [leaveRoom]);
+
+  useEffect(() => {
+    if (!room) return;
+
+    const handleBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [room]);
+
   return (
     <div className={`app${!room ? ' lobby-page' : ''}`}>
       {room && (
-        <header className="header">
+        <header className="header header-room">
+          <button
+            type="button"
+            className="btn-back"
+            onClick={handleLeaveRoom}
+            aria-label="방 나가기"
+            title="방 나가기"
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M15 18l-6-6 6-6"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
           <Logo size="sm" />
         </header>
       )}

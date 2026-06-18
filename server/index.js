@@ -111,9 +111,15 @@ io.on('connection', (socket) => {
   });
 
   socket.on('game-started', ({ code }) => {
-    const room = rooms.get(code);
+    const room = rooms.get(code?.toUpperCase());
     if (!room || room.hostId !== socket.id) return;
     room.status = 'playing';
+  });
+
+  socket.on('game-finished', ({ code }) => {
+    const room = rooms.get(code?.toUpperCase());
+    if (!room || room.hostId !== socket.id) return;
+    room.status = 'waiting';
   });
 
   socket.on('disconnect', () => {

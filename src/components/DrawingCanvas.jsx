@@ -1,6 +1,17 @@
 import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef } from 'react';
 
-const COLORS = ['#000', '#e94560', '#533483', '#0f3460', '#64ffda', '#ffd700', '#ff6b35', '#fff'];
+const COLORS = [
+  '#000000',
+  '#e94560',
+  '#ff6b35',
+  '#ffd700',
+  '#22c55e',
+  '#2563eb',
+  '#9333ea',
+  '#92400e',
+  '#64748b',
+];
+const ERASER_COLOR = '#fff';
 const ASPECT_RATIO = 4 / 3;
 const MAX_CANVAS_WIDTH = 480;
 
@@ -183,26 +194,53 @@ const DrawingCanvas = forwardRef(function DrawingCanvas(
       />
       {isDrawer && (
         <div className="toolbar">
-          {COLORS.map((c) => (
+          <div className="color-palette">
+            {COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                className={`color-btn ${color === c ? 'active' : ''}`}
+                style={{ background: c }}
+                onClick={() => setColor(c)}
+                aria-label={`색상 ${c}`}
+              />
+            ))}
             <button
-              key={c}
               type="button"
-              className={`color-btn ${color === c ? 'active' : ''}`}
-              style={{ background: c, border: c === '#fff' ? '1px solid #ccc' : undefined }}
-              onClick={() => setColor(c)}
+              className={`color-btn eraser ${color === ERASER_COLOR ? 'active' : ''}`}
+              onClick={() => setColor(ERASER_COLOR)}
+              aria-label="지우개"
+              title="지우개"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M16.24 3.56l4.2 4.2-9.19 9.19-4.2-4.2 9.19-9.19z"
+                  fill="currentColor"
+                  opacity="0.85"
+                />
+                <path
+                  d="M3 21h11l-4.5-4.5"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
+          <div className="toolbar-controls">
+            <input
+              type="range"
+              className="size-slider"
+              min="2"
+              max="20"
+              value={size}
+              onChange={(e) => setSize(Number(e.target.value))}
             />
-          ))}
-          <input
-            type="range"
-            className="size-slider"
-            min="2"
-            max="20"
-            value={size}
-            onChange={(e) => setSize(Number(e.target.value))}
-          />
-          <button type="button" className="btn-clear" onClick={handleClear}>
-            지우기
-          </button>
+            <button type="button" className="btn-clear" onClick={handleClear}>
+              지우기
+            </button>
+          </div>
         </div>
       )}
     </div>

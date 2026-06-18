@@ -153,11 +153,7 @@ export class GuestPeerManager {
         if (this.pc.connectionState === 'connected') {
           this.onConnected?.();
         }
-        if (
-          this.pc.connectionState === 'failed' ||
-          this.pc.connectionState === 'closed' ||
-          this.pc.connectionState === 'disconnected'
-        ) {
+        if (this.pc.connectionState === 'failed' || this.pc.connectionState === 'closed') {
           this.onDisconnected?.();
         }
       };
